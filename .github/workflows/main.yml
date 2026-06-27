@@ -244,6 +244,9 @@ jobs:
         ${CONFIG} --enable CONFIG_USB_G_MULTI_RNDIS_ACM
         ${CONFIG} --enable CONFIG_USB_G_MULTI_RNDIS_RNDIS
 
+        # === Disable DRM (omapdrm linker error) ===
+        ${CONFIG} --disable CONFIG_DRM
+
         # === Finalize config ===
         echo "n" | make CC=clang ARCH=arm64 O=~/out oldconfig || true
 
