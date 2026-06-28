@@ -49,10 +49,7 @@ jobs:
         echo "DATE=$(date +%Y-%m-%d-%H-%M-%S)" >> $GITHUB_ENV
         sleep 5
         for i in 1 2 3; do git clone --depth=1 --single-branch https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android10-release && break; echo "Clone retry $i"; sleep 30; done
-        wget --timeout=120 --tries=5 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/archive/92696b73aa81d262c5fe5bd6d23c052593a109da/clang-r383902.tar.gz
-        mkdir clang
-        tar -xzf clang-r383902.tar.gz -C clang/
-        rm clang-r383902.tar.gz
+        git clone --depth=1 --single-branch -b llvm-r383902b https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang
         echo "$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/aarch64-linux-android-4.9/bin:/usr/bin:/bin" >> $GITHUB_PATH
         sed -i -E 's/\bpython2\b ?//g; s/  +/ /g' package
         bash package || { echo "package failed, retrying..."; sleep 30; bash package; }
