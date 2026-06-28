@@ -32,7 +32,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     timeout-minutes: 180
 
     steps:
@@ -255,13 +255,13 @@ jobs:
         make CC=clang ARCH=arm64 O=~/out -j$(nproc) \
           HEADER_ARCH=arm64 \
           SUBARCH=arm64 \
-          LD="ld.lld -m aarch64elf" \
+          LD=ld.lld \
           AR=llvm-ar \
           NM=llvm-nm \
           STRIP=llvm-strip \
           READELF=llvm-readelf \
           CROSS_COMPILE=aarch64-linux-android- \
-          CLANG_TRIPLE=aarch64-linux-gnu-
+          # CLANG_TRIPLE=aarch64-linux-gnu-
 
     - name: Verify Modules
       run: |
