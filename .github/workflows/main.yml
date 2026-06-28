@@ -250,12 +250,15 @@ jobs:
         # === Finalize config ===
         echo "n" | make CC=clang ARCH=arm64 O=~/out oldconfig || true
 
+        # Check if DRM is still enabled, disable again
+        grep -q "CONFIG_DRM=y" .config \&\& echo "CONFIG_DRM=n" >> .config
+
     - name: Build Kernel + Modules
       run: |
         make CC=clang ARCH=arm64 O=~/out -j$(nproc) \
           HEADER_ARCH=arm64 \
           SUBARCH=arm64 \
-          LD=ld.lld \
+          LD="ld.lld -m aarch64elf" \
           AR=llvm-ar \
           NM=llvm-nm \
           STRIP=llvm-strip \
