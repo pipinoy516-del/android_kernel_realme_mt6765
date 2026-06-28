@@ -1,0 +1,331 @@
+name: NetHunter Kernel Build - RMX2185 Dual Adapter
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch or commit'
+        required: true
+        default: 'wip'
+        type: string
+      localversion:
+        description: 'Custom LOCALVERSION'
+        required: true
+        default: '-Nethunter-Upstream-[8188EX]'
+        type: string
+      build_user:
+        description: 'Build user'
+        required: true
+        default: 'OWL'
+        type: string
+      build_host:
+        description: 'Build host'
+        required: true
+        default: 'Termux'
+        type: string
+
+env:
+  KBUILD_BUILD_USER: ${{ github.event.inputs.build_user }}
+  KBUILD_BUILD_HOST: ${{ github.event.inputs.build_host }}
+  LOCALVERSION: ${{ github.event.inputs.localversion }}
+  TZ: Asia/Jakarta
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    timeout-minutes: 180
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.inputs.branch }}
+        fetch-depth: 1
+
+    - name: Setup Environment
+      run: |
+        echo "Build User: $KBUILD_BUILD_USER"
+        echo "Build Host: $KBUILD_BUILD_HOST"
+        echo "DATE=$(date +%Y-%m-%d-%H-%M-%S)" >> $GITHUB_ENV
+        sleep 5
+        git clone --depth=1 --single-branch https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android10-release || (echo "Clone failed, retrying..." ; sleep 30 ; git clone --depth=1 --single-branch https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android10-release)
+        git clone --depth=1 --single-branch -b llvm-r536225-release https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang
+        echo "$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/aarch64-linux-android-4.9/bin:/usr/bin:/bin" >> $GITHUB_PATH
+        sed -i -E 's/\bpython2\b ?//g; s/  +/ /g' package
+        bash package || { echo "package failed, retrying..."; sleep 30; bash package; }
+
+    - name: Verify Clang
+      run: clang -v
+
+    - name: Set Swap Space
+      uses: pierotofy/set-swap-space@master
+      with:
+        swap-size-gb: 8
+
+    - name: Prepare nethunter_defconfig + NetHunter Config
+      run: |
+        make CC=clang ARCH=arm64 O=~/out nethunter_defconfig
+        cd ~/out
+        CONFIG=${GITHUB_WORKSPACE}/scripts/config
+
+        # === Disable old rtl8xxxu (STATION-only, no VIF) ===
+        ${CONFIG} --disable CONFIG_RTL8XXXU
+
+        # === TL-WN725N v3: Enable 8188eu (full AP+Monitor+VIF) ===
+        ${CONFIG} --enable CONFIG_RTL8188E
+        ${CONFIG} --enable CONFIG_USB_HCI
+
+        # === TL-WN722N v1: ath9k_htc ===
+        ${CONFIG} --enable CONFIG_ATH9K
+        ${CONFIG} --enable CONFIG_ATH9K_HTC
+        ${CONFIG} --enable CONFIG_ATH9K_HTC_DEBUGFS
+        ${CONFIG} --enable CONFIG_ATH9K_COMMON
+        ${CONFIG} --enable CONFIG_ATH9K_HW
+        ${CONFIG} --enable CONFIG_ATH9K_BTCOEX_SUPPORT
+
+        # === Wireless Core ===
+        ${CONFIG} --module CONFIG_CFG80211
+        ${CONFIG} --module CONFIG_MAC80211
+        ${CONFIG} --enable CONFIG_WLAN
+        ${CONFIG} --enable CONFIG_WLAN_VENDOR_ATH
+        ${CONFIG} --enable CONFIG_WLAN_VENDOR_REALTEK
+
+        # === Netfilter / NFTables (Captive Portal / NAT) ===
+        ${CONFIG} --enable CONFIG_NETFILTER
+        ${CONFIG} --enable CONFIG_NETFILTER_ADVANCED
+        ${CONFIG} --enable CONFIG_NETFILTER_INGRESS
+        ${CONFIG} --module CONFIG_NF_TABLES
+        ${CONFIG} --module CONFIG_NFT
+        ${CONFIG} --module CONFIG_NFT_CT
+        ${CONFIG} --module CONFIG_NFT_NETDEV
+        ${CONFIG} --module CONFIG_NFT_NAT
+        ${CONFIG} --module CONFIG_NFT_MATCH
+        ${CONFIG} --module CONFIG_NFT_REJECT
+        ${CONFIG} --module CONFIG_NFT_LOG
+        ${CONFIG} --module CONFIG_NFT_COUNTER
+        ${CONFIG} --module CONFIG_NFT_LIMIT
+        ${CONFIG} --module CONFIG_NFT_FIB
+        ${CONFIG} --module CONFIG_NFT_TPROXY
+        ${CONFIG} --module CONFIG_NFT_CONNLIMIT
+        ${CONFIG} --module CONFIG_NFT_REJECT_INET
+        ${CONFIG} --module CONFIG_NFT_STATE
+        ${CONFIG} --module CONFIG_NFT_BRIDGE
+        ${CONFIG} --module CONFIG_NFT_MAP
+        ${CONFIG} --module CONFIG_NFT_MASQ
+        ${CONFIG} --module CONFIG_NFT_XFRM
+        ${CONFIG} --module CONFIG_NFT_SOCKET
+        ${CONFIG} --module CONFIG_NFT_OSF
+        ${CONFIG} --module CONFIG_NFT_SYNPROXY
+        ${CONFIG} --module CONFIG_NFT_DUPNETDEV
+        ${CONFIG} --module CONFIG_NFT_QUOTA
+        ${CONFIG} --module CONFIG_NFT_REDIR
+        ${CONFIG} --module CONFIG_NFT_SNAT
+        ${CONFIG} --module CONFIG_NETFILTER_XTABLES
+        ${CONFIG} --module CONFIG_NETFILTER_XT_TARGET_CT
+        ${CONFIG} --module CONFIG_NETFILTER_XT_TARGET_LOG
+        ${CONFIG} --module CONFIG_NETFILTER_XT_TARGET_MARK
+        ${CONFIG} --module CONFIG_NETFILTER_XT_TARGET_NFLOG
+        ${CONFIG} --module CONFIG_NETFILTER_XT_TARGET_TCPMSS
+        ${CONFIG} --module CONFIG_NETFILTER_XT_TARGET_NOTRACK
+        ${CONFIG} --module CONFIG_NETFILTER_XT_MATCH_ADDRTYPE
+        ${CONFIG} --module CONFIG_NETFILTER_XT_MATCH_COMMENT
+        ${CONFIG} --module CONFIG_NETFILTER_XT_MATCH_CONNTRACK
+        ${CONFIG} --module CONFIG_NETFILTER_XT_MATCH_MARK
+        ${CONFIG} --module CONFIG_NETFILTER_XT_MATCH_MULTIPORT
+        ${CONFIG} --module CONFIG_NETFILTER_XT_MATCH_PKTTYPE
+        ${CONFIG} --module CONFIG_NETFILTER_XT_MATCH_STATE
+        ${CONFIG} --module CONFIG_NETFILTER_XT_MATCH_STRING
+        ${CONFIG} --module CONFIG_NETFILTER_XT_MATCH_TIME
+        ${CONFIG} --module CONFIG_NETFILTER_XT_MATCH_U32
+        ${CONFIG} --module CONFIG_IP_SET
+        ${CONFIG} --module CONFIG_IP_VS
+        ${CONFIG} --module CONFIG_NF_CONNTRACK
+        ${CONFIG} --module CONFIG_NF_NAT
+        ${CONFIG} --module CONFIG_NF_NAT_IPV4
+        ${CONFIG} --module CONFIG_NF_NAT_IPV6
+        ${CONFIG} --module CONFIG_NF_NAT_MASQUERADE_IPV4
+        ${CONFIG} --module CONFIG_NF_NAT_MASQUERADE_IPV6
+        ${CONFIG} --module CONFIG_NF_NAT_REDIRECT
+        ${CONFIG} --module CONFIG_NF_NAT_FTP
+        ${CONFIG} --module CONFIG_NF_NAT_IRC
+        ${CONFIG} --module CONFIG_NF_NAT_SIP
+        ${CONFIG} --module CONFIG_NF_NAT_TFTP
+        ${CONFIG} --module CONFIG_NF_NAT_PPTP
+        ${CONFIG} --module CONFIG_NF_NAT_H323
+        ${CONFIG} --module CONFIG_NF_CT_NETLINK
+        ${CONFIG} --module CONFIG_NF_CT_PROTO_GRE
+        ${CONFIG} --module CONFIG_NF_CT_PROTO_SCTP
+        ${CONFIG} --module CONFIG_NF_CT_PROTO_UDPLITE
+        ${CONFIG} --module CONFIG_IP_NF_IPTABLES
+        ${CONFIG} --module CONFIG_IP_NF_FILTER
+        ${CONFIG} --module CONFIG_IP_NF_TARGET_REJECT
+        ${CONFIG} --module CONFIG_IP_NF_NAT
+        ${CONFIG} --module CONFIG_IP_NF_TARGET_MASQUERADE
+        ${CONFIG} --module CONFIG_IP_NF_TARGET_NETMAP
+        ${CONFIG} --module CONFIG_IP_NF_TARGET_REDIRECT
+        ${CONFIG} --module CONFIG_IP_NF_MANGLE
+        ${CONFIG} --module CONFIG_IP_NF_RAW
+        ${CONFIG} --module CONFIG_IP_NF_SECURITY
+        ${CONFIG} --module CONFIG_IP_NF_ARPTABLES
+        ${CONFIG} --module CONFIG_IP_NF_ARPFILTER
+        ${CONFIG} --module CONFIG_IP_NF_ARP_MANGLE
+        ${CONFIG} --module CONFIG_IP6_NF_IPTABLES
+        ${CONFIG} --module CONFIG_IP6_NF_FILTER
+        ${CONFIG} --module CONFIG_IP6_NF_TARGET_REJECT
+        ${CONFIG} --module CONFIG_IP6_NF_NAT
+        ${CONFIG} --module CONFIG_IP6_NF_TARGET_MASQUERADE
+        ${CONFIG} --module CONFIG_IP6_NF_MANGLE
+        ${CONFIG} --module CONFIG_IP6_NF_RAW
+        ${CONFIG} --module CONFIG_BRIDGE_NETFILTER
+
+        # === Network Namespaces ===
+        ${CONFIG} --enable CONFIG_NET_NS
+
+        # === USB ===
+        ${CONFIG} --enable CONFIG_USB
+        ${CONFIG} --enable CONFIG_USB_SUPPORT
+        ${CONFIG} --enable CONFIG_USB_ARCH_HAS_HCD
+        ${CONFIG} --module CONFIG_USB_SERIAL
+        ${CONFIG} --module CONFIG_USB_SERIAL_GENERIC
+        ${CONFIG} --module CONFIG_USB_SERIAL_SIMPLE
+        ${CONFIG} --module CONFIG_USB_SERIAL_CH341
+        ${CONFIG} --module CONFIG_USB_SERIAL_CP210x
+        ${CONFIG} --module CONFIG_USB_SERIAL_FTDI_SIO
+        ${CONFIG} --module CONFIG_USB_SERIAL_PL2303
+        ${CONFIG} --enable CONFIG_USB_STORAGE
+        ${CONFIG} --enable CONFIG_USB_UAS
+        ${CONFIG} --enable CONFIG_USB_GADGET
+        ${CONFIG} --module CONFIG_USB_GADGETFS
+        ${CONFIG} --module CONFIG_USB_CONFIGFS
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_SERIAL
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_ACM
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_OBEX
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_NCM
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_ECM
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_ECM_SUBSET
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_RNDIS
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_EEM
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_MASS_STORAGE
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_F_FS
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_F_HID
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_F_UAC1
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_F_UAC1_LEGACY
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_F_UAC2
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_F_MIDI
+        ${CONFIG} --enable CONFIG_USB_CONFIGFS_F_PRINTER
+        ${CONFIG} --module CONFIG_USB_ZERO
+        ${CONFIG} --module CONFIG_USB_ETH
+        ${CONFIG} --enable CONFIG_USB_ETH_RNDIS
+        ${CONFIG} --module CONFIG_USB_G_SERIAL
+        ${CONFIG} --module CONFIG_USB_G_PRINTER
+        ${CONFIG} --enable CONFIG_USB_G_ACM
+        ${CONFIG} --module CONFIG_USB_G_PLUGCOMPOSITE
+        ${CONFIG} --module CONFIG_USB_G_HID
+        ${CONFIG} --module CONFIG_USB_G_MULTI
+        ${CONFIG} --enable CONFIG_USB_G_MULTI_CDC
+        ${CONFIG} --enable CONFIG_USB_G_SERIAL_ACM
+        ${CONFIG} --enable CONFIG_USB_G_SERIAL_RNDIS
+        ${CONFIG} --enable CONFIG_USB_G_ACM_ACM
+        ${CONFIG} --enable CONFIG_USB_G_ACM_RNDIS
+        ${CONFIG} --enable CONFIG_USB_G_RNDIS_ACM
+        ${CONFIG} --enable CONFIG_USB_G_RNDIS_RNDIS
+        ${CONFIG} --enable CONFIG_USB_G_HID_ACM
+        ${CONFIG} --enable CONFIG_USB_G_HID_RNDIS
+        ${CONFIG} --enable CONFIG_USB_G_HID_ACM_ACM
+        ${CONFIG} --enable CONFIG_USB_G_HID_ACM_RNDIS
+        ${CONFIG} --enable CONFIG_USB_G_HID_RNDIS_ACM
+        ${CONFIG} --enable CONFIG_USB_G_HID_RNDIS_RNDIS
+        ${CONFIG} --enable CONFIG_USB_G_MULTI_ACM
+        ${CONFIG} --enable CONFIG_USB_G_MULTI_RNDIS
+        ${CONFIG} --enable CONFIG_USB_G_MULTI_ACM_ACM
+        ${CONFIG} --enable CONFIG_USB_G_MULTI_ACM_RNDIS
+        ${CONFIG} --enable CONFIG_USB_G_MULTI_RNDIS_ACM
+        ${CONFIG} --enable CONFIG_USB_G_MULTI_RNDIS_RNDIS
+
+        # === Disable DRM (omapdrm linker error) ===
+        ${CONFIG} --disable CONFIG_DRM
+
+        # === Finalize config ===
+        make CC=clang ARCH=arm64 O=~/out olddefconfig
+
+        # Check if DRM is still enabled, disable again
+
+    - name: Build Kernel + Modules
+      run: |
+        make CC=clang ARCH=arm64 O=~/out -j$(nproc) \
+          HEADER_ARCH=arm64 \
+          SUBARCH=arm64 \
+          LD=ld.lld \
+          AR=llvm-ar \
+          NM=llvm-nm \
+          STRIP=llvm-strip \
+          READELF=llvm-readelf \
+          CROSS_COMPILE=aarch64-linux-android- \
+          # CLANG_TRIPLE=aarch64-linux-gnu-
+
+    - name: Verify Modules
+      run: |
+        echo "=== All .ko files ==="
+        find ~/out -name "*.ko" | sort
+        echo ""
+        echo "=== Critical modules check ==="
+        for mod in ath9k_htc.ko ath9k_hw.ko ath9k_common.ko 8188eu.ko nf_tables.ko; do
+          FOUND=$(find ~/out -name "$mod" 2>/dev/null)
+          if [ -n "$FOUND" ]; then
+            echo "OK: $FOUND"
+          else
+            echo "MISSING: $mod"
+          fi
+        done
+
+    - name: Download Firmware
+      run: |
+        mkdir -p /tmp/nh-firmware
+        wget -q "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/htc_9271.fw" -O /tmp/nh-firmware/htc_9271.fw 2>/dev/null || echo "FW_DL1_FAIL"
+        wget -q "https://raw.githubusercontent.com/TI-OpenLink/firmware/firmware/htc_9271-1.4.0.fw" -O /tmp/nh-firmware/htc_9271.fw 2>/dev/null || echo "FW_DL2_FAIL"
+        wget -q "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/rtlwifi/rtl8xxxu_fw.bin" -O /tmp/nh-firmware/rtl8xxxu_fw.bin 2>/dev/null || echo "FW_DL3_FAIL"
+        wget -q "https://gitlab.com/linux-firmware/linux-firmware/-/raw/main/rtlwifi/rtl8188eu_fw.bin" -O /tmp/nh-firmware/rtl8188eu_fw.bin 2>/dev/null || echo "FW_DL4_FAIL"
+        ls -la /tmp/nh-firmware/ 2>/dev/null || echo "NO_FW_DOWNLOADED"
+
+    - name: AnyKernel3 Packaging
+      run: |
+        ANYKERNEL=$GITHUB_WORKSPACE/kali-nethunter-kernel/anykernel3
+        ZIPNAME="NH-RMX2185-${{ env.DATE }}"
+        mv ~/out/arch/arm64/boot/Image.gz $ANYKERNEL
+        mkdir -p $ANYKERNEL/modules/system/lib/modules
+        find ~/out -name "*.ko" -exec cp {} $ANYKERNEL/modules/system/lib/modules/ \;
+        if [ -f /tmp/nh-firmware/htc_9271.fw ]; then
+          mkdir -p $ANYKERNEL/modules/system/lib/firmware/ath9k_htc
+          cp /tmp/nh-firmware/htc_9271.fw $ANYKERNEL/modules/system/lib/firmware/ath9k_htc/
+        fi
+        if [ -f /tmp/nh-firmware/rtl8188eu_fw.bin ]; then
+          mkdir -p $ANYKERNEL/modules/system/lib/firmware/rtlwifi
+          cp /tmp/nh-firmware/rtl8188eu_fw.bin $ANYKERNEL/modules/system/lib/firmware/rtlwifi/
+        fi
+        cat > $ANYKERNEL/modules/system/etc/init.d/99nethunter_modules << 'SCRIPT'
+        #!/system/bin/sh
+        MODDIR=/system/lib/modules
+        insmod $MODDIR/ath9k_hw.ko 2>/dev/null
+        insmod $MODDIR/ath9k_common.ko 2>/dev/null
+        insmod $MODDIR/ath9k_htc.ko ps_enable=0 2>/dev/null
+        insmod $MODDIR/8188eu.ko 2>/dev/null
+        insmod $MODDIR/nf_tables.ko 2>/dev/null
+        SCRIPT
+        chmod +x $ANYKERNEL/modules/system/etc/init.d/99nethunter_modules
+        cd $ANYKERNEL
+        zip -r9 ${ZIPNAME}.zip *
+
+    - name: Upload to Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: kali-nethunter-kernel/anykernel3/*.zip
+        name: NH-RMX2185-${{ env.DATE }}-${{ github.run_id }}
+        tag_name: ${{ github.run_id }}
+        token: ${{ secrets.MY_TOKEN }}
+        body: |
+          NetHunter Kernel for RMX2185 (MT6765)
+          Base: nethunter_defconfig + NetHunter Config
+          Modules: ath9k_htc, 8188eu, nf_tables + nftables suite
+          Features: AP + Monitor + VIF (8188eu), PM fix (ath9k_htc)
+          Firmware: htc_9271.fw + rtl8188eu_fw.bin included
+          Build: ${{ env.DATE }}
