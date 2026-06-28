@@ -48,7 +48,7 @@ jobs:
         echo "Build Host: $KBUILD_BUILD_HOST"
         echo "DATE=$(date +%Y-%m-%d-%H-%M-%S)" >> $GITHUB_ENV
         sleep 5
-        for i in 1 2 3; do git clone --depth=1 --single-branch https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android10-release && break; echo "Clone retry $i"; sleep 30; done
+        git clone --depth=1 --single-branch https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android10-release || (echo "Clone failed, retrying..." ; sleep 30 ; git clone --depth=1 --single-branch https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android10-release)
         git clone --depth=1 --single-branch -b llvm-r383902b https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang
         echo "$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/aarch64-linux-android-4.9/bin:/usr/bin:/bin" >> $GITHUB_PATH
         sed -i -E 's/\bpython2\b ?//g; s/  +/ /g' package
@@ -249,7 +249,6 @@ jobs:
         make CC=clang ARCH=arm64 O=~/out olddefconfig
 
         # Check if DRM is still enabled, disable again
-        grep -q "CONFIG_DRM=y" .config \&\& echo "CONFIG_DRM=n" >> .config
 
     - name: Build Kernel + Modules
       run: |
