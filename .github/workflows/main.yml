@@ -246,7 +246,7 @@ jobs:
         ${CONFIG} --disable CONFIG_DRM
 
         # === Finalize config ===
-        yes "" | make CC=clang ARCH=arm64 O=~/out oldconfig || true
+        make CC=clang ARCH=arm64 O=~/out olddefconfig
 
         # Check if DRM is still enabled, disable again
         grep -q "CONFIG_DRM=y" .config \&\& echo "CONFIG_DRM=n" >> .config
